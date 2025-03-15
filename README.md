@@ -4,4 +4,4 @@ cd Loanprediction
 
 pip install streamlit pandas
 
-streamlit run loan.py
+streamlit run Loanprediction.py
