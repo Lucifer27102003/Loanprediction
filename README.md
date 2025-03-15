@@ -1,6 +1,6 @@
 git clone https://github.com/Lucifer27102003/Loanprediction.git
 
-cd loanapp
+cd Loanprediction
 
 pip install streamlit pandas
 
