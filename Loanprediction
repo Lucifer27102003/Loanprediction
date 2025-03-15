@@ -1,0 +1,173 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn import metrics
+import joblib
+
+# Load dataset
+data = pd.read_csv('C:/Loan Management Project/.vscode/LoanApprovalPrediction.csv')
+
+# Drop Loan_ID (not useful for prediction)
+data.drop(['Loan_ID'], axis=1, inplace=True)
+
+# Encode categorical variables
+label_encoders = {}
+for col in data.select_dtypes(include=['object']).columns:
+    label_encoders[col] = LabelEncoder()
+    data[col] = label_encoders[col].fit_transform(data[col])
+
+# Handle missing values
+imputer = SimpleImputer(strategy='mean')
+data.iloc[:, :] = imputer.fit_transform(data)
+
+# Splitting data
+X = data.drop(['Loan_Status'], axis=1)  # Features
+Y = data['Loan_Status']  # Target
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.3, random_state=42)
+
+# Scaling data
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Training model
+rfc = RandomForestClassifier(n_estimators=100, criterion='entropy', random_state=42)
+rfc.fit(X_train, Y_train)
+
+# Save model & objects
+joblib.dump(rfc, 'loan_approval_model.pkl')
+joblib.dump(scaler, 'scaler.pkl')
+joblib.dump(label_encoders, 'label_encoders.pkl')
+joblib.dump(imputer, 'imputer.pkl')
+
+# Load model & objects
+model = joblib.load('loan_approval_model.pkl')
+scaler = joblib.load('scaler.pkl')
+label_encoders = joblib.load('label_encoders.pkl')
+imputer = joblib.load('imputer.pkl')
+
+# Loan Management System
+class Loan:
+    def __init__(self, loan_id, borrower_name, loan_details):
+        self.loan_id = loan_id
+        self.borrower_name = borrower_name
+        self.loan_details = loan_details
+        self.balance = loan_details['LoanAmount']
+        self.repaid = 0
+
+    def calculate_monthly_payment(self):
+        rate = self.loan_details['InterestRate'] / 12 / 100
+        if rate == 0:
+            return self.loan_details['LoanAmount'] / self.loan_details['LoanTerm']
+        return round((self.loan_details['LoanAmount'] * rate) / (1 - (1 + rate) ** -self.loan_details['LoanTerm']), 2)
+
+    def make_repayment(self, amount):
+        if amount <= 0 or amount > self.balance:
+            print(f"Invalid repayment amount. Remaining balance: {self.balance}")
+            return
+        self.repaid += amount
+        self.balance -= amount
+        print(f"Repayment of {amount} successful. Remaining balance: {self.balance}")
+
+    def loan_status(self):
+        print(f"\nLoan ID: {self.loan_id}\nBorrower: {self.borrower_name}\nRepaid: {self.repaid}\nBalance: {self.balance}")
+
+
+class LoanManagementSystem:
+    def __init__(self):
+        self.loans = {}
+
+    def apply_for_loan(self):
+        loan_id = input("Enter Loan ID: ")
+        borrower_name = input("Enter Borrower's Name: ")
+
+        loan_details = {}
+        for col in X.columns:
+            value = input(f"Enter {col}: ")
+            
+            # Handle categorical inputs
+            if col in label_encoders:
+                if value not in label_encoders[col].classes_:
+                    print(f"Warning: {value} not in training data. Using default encoding.")
+                    value = label_encoders[col].classes_[0]  # Assign to the first known category
+                loan_details[col] = label_encoders[col].transform([value])[0]
+            else:
+                try:
+                    loan_details[col] = float(value)
+                except ValueError:
+                    print("Invalid input. Enter a numeric value.")
+                    return
+
+        # Convert to DataFrame
+        applicant_data = pd.DataFrame([loan_details])
+
+        # Ensure all columns match training data
+        missing_cols = set(X.columns) - set(applicant_data.columns)
+        for col in missing_cols:
+            applicant_data[col] = np.nan  # Add missing columns with NaN values
+
+        # Reorder columns to match training data
+        applicant_data = applicant_data[X.columns]
+
+        # Apply transformations
+        try:
+            applicant_data = imputer.transform(applicant_data)
+            applicant_data = scaler.transform(applicant_data)
+            approval = model.predict(applicant_data)[0]
+        except Exception as e:
+            print(f"Error during prediction: {e}")
+            return
+
+        if approval == 1:
+            print("Congratulations! Loan approved.")
+            self.loans[loan_id] = Loan(loan_id, borrower_name, loan_details)
+        else:
+            print("Sorry, loan application rejected.")
+
+    def view_loan_details(self):
+        loan_id = input("Enter Loan ID: ")
+        loan = self.loans.get(loan_id)
+        if loan:
+            loan.loan_status()
+        else:
+            print("Loan ID not found.")
+
+    def make_repayment(self):
+        loan_id = input("Enter Loan ID: ")
+        loan = self.loans.get(loan_id)
+        if loan:
+            try:
+                amount = float(input("Enter repayment amount: "))
+                loan.make_repayment(amount)
+            except ValueError:
+                print("Invalid input. Enter a numeric value.")
+        else:
+            print("Loan ID not found.")
+            
+
+    def display_menu(self):
+        while True:
+            print("\n1. Apply for Loan\n2. View Loan Details\n3. Make Repayment\n4. Exit")
+            choice = input("Choose an option: ")
+            if choice == "1":
+                self.apply_for_loan()
+            elif choice == "2":
+                self.view_loan_details()
+            elif choice == "3":
+                self.make_repayment()
+            elif choice == "4":
+                print("Exiting...")
+                break
+            else:
+                print("Invalid choice, try again.")
+
+
+if __name__ == "__main__":
+    system = LoanManagementSystem()
+    system.display_menu()
